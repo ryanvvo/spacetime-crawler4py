@@ -21,11 +21,12 @@ stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','
                   'who\'s','whom','why','why\'s','with','won\'t','would','wouldn\'t','you','you\'d','you\'ll','you\'re',
                   'you\'ve','your','yours','yourself', 'yourselves']
 
+#currently not being printed anywhere.
 unique_urls = set()
 longest_page = 0
 lp_url = ""
 word_cnt = Counter()
-subdomains = defaultdict(set)
+subdomains = defaultdict(set) #would get one with longest length set at the end
 
 
 def scraper(url, resp):
@@ -105,6 +106,7 @@ def is_valid(url):
             or dom == 'stat.uci.edu' or dom.endswith('.stat.uci.edu')
         ): return False
 
+        #update these with more traps
         bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', ]
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
