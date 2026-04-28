@@ -65,7 +65,9 @@ def extract_next_links(url, resp):
     links = set()
 
     for tag in soup.find_all('a', href=True):
-        absolute_link = urljoin(url_c, tag['href'])        
+        absolute_link = safe_urljoin(url_c, tag['href'])
+        if not absolute_link: continue
+
         new_url, frag = urldefrag(absolute_link)
         
         if not (new_url in links):
@@ -141,3 +143,21 @@ def tokenize(text):
     counts = Counter(token for token in tokens if token not in stop_words)
 
     return counts, total
+
+
+def safe_urljoin(url_c, tag):
+    '''
+    Safer version of urljoin to avoid exception.
+    '''
+    try:
+        url = urljoin(url_c, tag)
+        parsed = urlparse(url)
+        if not parsed.scheme in {"http", "https"}: # checks for non http:
+            return None
+        if not parsed.netloc: # no domain + port
+            return None
+
+        return url
+
+    except:
+        return None
