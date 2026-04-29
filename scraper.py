@@ -1,9 +1,10 @@
 import re
-from urllib.parse import urlparse, urldefrag, urljoin
+from urllib.parse import urlparse, urldefrag, urljoin, urlencode, parse_qs
 
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 
+KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
 
 
 stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
@@ -69,7 +70,8 @@ def extract_next_links(url, resp):
         if not absolute_link: continue
 
         new_url, frag = urldefrag(absolute_link)
-        
+        new_url = strip_bad_queries(new_url)
+
         if not (new_url in links):
             links.add(new_url)
 
@@ -161,3 +163,16 @@ def safe_urljoin(url_c, tag):
 
     except:
         return None
+
+def strip_bad_queries(url):
+    '''
+    Given a url, this function strips query params not in KEEP_QUERY_PARAM
+    '''
+    parsed = urlparse(url)
+    
+    # Parse and filter query params
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    filtered = {k: v for k, v in params.items() if k in KEEP_QUERY_PARAM}
+    new_query = urlencode(sorted(filtered.items()), doseq=True)
+    # Rebuild
+    return parsed._replace(query=new_query).geturl()
