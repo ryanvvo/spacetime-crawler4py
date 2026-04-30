@@ -3,9 +3,10 @@ from urllib.parse import urlparse, urldefrag, urljoin, urlencode, parse_qs
 
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
+from urllib.robotparser import RobotFileParser
 
 KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
-
+robot_cache = {} # cache for robots.txt; url : RobotFileParser
 
 stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
@@ -110,6 +111,9 @@ def is_valid(url):
             or dom == 'stat.uci.edu' or dom.endswith('.stat.uci.edu')
         ): return False
 
+        if not is_valid_robots(url_c, parsed):
+            return False
+
         #update these with more traps
         bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', ]
 
@@ -176,3 +180,24 @@ def strip_bad_queries(url):
     new_query = urlencode(sorted(filtered.items()), doseq=True)
     # Rebuild
     return parsed._replace(query=new_query).geturl()
+
+def is_valid_robots(url, parsed_url, user_agent = 'IR S26'):
+    '''
+    Checks the robots.txt of the domain/subdomain to see if the url can be fetched.
+    '''
+    base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    
+    if base in robot_cache:
+        rp = robot_cache[base]
+    else:
+        rp = RobotFileParser()
+        rp.set_url(f"{base}/robots.txt")
+        try:
+            rp.read()
+        except Exception:
+            rp = None  # if robots.txt is unreachable, assume allowed
+        robot_cache[base] = rp
+    
+    if rp is None:
+        return True  # can't reach robots.txt — allow by default
+    return rp.can_fetch(user_agent, url)
