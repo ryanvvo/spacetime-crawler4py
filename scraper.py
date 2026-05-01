@@ -4,14 +4,13 @@ from urllib.parse import urlparse, urldefrag, urljoin, parse_qs, urlencode
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning, MarkupResemblesLocatorWarning
 from collections import Counter, defaultdict
-from urllib.robotparser import RobotFileParser
 
 import hashlib, shelve, signal, sys, atexit, warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SHELF_PATH = "scraper.shelve"
-BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype'}
+BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype', 'C'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
@@ -39,7 +38,6 @@ with shelve.open(SHELF_PATH) as db:
     word_cnt     = db.get('word_cnt',     Counter())
     subdomains   = db.get('subdomains',   defaultdict(set))
     hash_cache   = db.get('hash_cache',   set())
-    robot_cache  = db.get('robot_cache',  {})
 
 def update_shelf():
     global longest_page, lp_url, unique_urls, word_cnt, subdomains
@@ -50,7 +48,6 @@ def update_shelf():
         word_cnt     = db.get('word_cnt',     Counter())
         subdomains   = db.get('subdomains',   defaultdict(set))
         hash_cache   = db.get('hash_cache',   set())
-        robot_cache  = db.get('robot_cache',  {})
 
 def save_shelf():
     with shelve.open(SHELF_PATH) as db:
@@ -59,8 +56,7 @@ def save_shelf():
         db['lp_url']        = lp_url
         db['word_cnt']      = word_cnt
         db['subdomains']    = subdomains
-        db['robot_cache']   = robot_cache
-        db['page_hashes']   = hash_cache
+        db['hash_cache']   = hash_cache
 
 def update_stats():
     save_shelf()
@@ -111,6 +107,10 @@ def extract_next_links(url, resp):
     if not resp:
         return []
 
+    if resp.status >= 600:
+        if not valid_cache_status(resp.status):
+            return []
+
     if not resp.status == 200:
         return [] 
     
@@ -119,12 +119,6 @@ def extract_next_links(url, resp):
 
     if is_too_large(resp):
         return []
-    
-    url_c, fr = urldefrag(resp.raw_response.url)
-
-    if url_c in unique_urls:
-        return []
-    unique_urls.add(url_c)
 
     soup = BeautifulSoup(resp.raw_response.content, "lxml")
     all_text = soup.get_text(separator=' ', strip=True)
@@ -132,10 +126,18 @@ def extract_next_links(url, resp):
 
     if is_similar(ret_count):
         return []
+
+    url_c, fr = urldefrag(resp.raw_response.url)
+
+    if url_c in unique_urls:
+        return []
+    if not is_valid(url_c):
+        return []
+
+    unique_urls.add(url_c)
+
     links = set()
-    tags = soup.find_all('a', href=True)
-    print(len(tags))
-    for tag in tags:
+    for tag in soup.find_all('a', href=True):
         absolute_link = safe_urljoin(url_c, tag['href'])
         if not absolute_link: continue
 
@@ -178,11 +180,8 @@ def is_valid(url):
             or dom == 'stat.uci.edu' or dom.endswith('.stat.uci.edu')
         ): return False
 
-        if not is_valid_robots(url_c, parsed):
-            return False
-
         #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/Families/', '/junkyard/', '/pubs/', 'login']
+        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/families/', '/junkyard/', '/pubs/', 'login']
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
@@ -194,7 +193,7 @@ def is_valid(url):
             + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
-            + r"|thmx|mso|arff|rtf|jar|csv"
+            + r"|thmx|mso|arff|rtf|jar|csv|lif"
             + r"|c|cpp|py|ipynb|h"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
@@ -250,27 +249,6 @@ def strip_bad_queries(url):
     # Rebuild
     return parsed._replace(query=new_query).geturl()
 
-def is_valid_robots(url, parsed_url, user_agent = 'IR S26'):
-    '''
-    Checks the robots.txt of the domain/subdomain to see if the url can be fetched.
-    '''
-    base = f"{parsed_url.scheme}://{parsed_url.netloc}"
-    
-    if base in robot_cache:
-        rp = robot_cache[base]
-    else:
-        rp = RobotFileParser()
-        rp.set_url(f"{base}/robots.txt")
-        try:
-            rp.read()
-        except Exception:
-            rp = None  # if robots.txt is unreachable, assume allowed
-        robot_cache[base] = rp
-    
-    if rp is None:
-        return True  # can't reach robots.txt — allow by default
-    return rp.can_fetch(user_agent, url)
-
 def hashify(token):
     '''
     Hash a token to a hash value. We use this instead of Python's built-in hash function because this is determinstic.
@@ -309,6 +287,11 @@ def sim_hash_compare(sim_hash1, sim_hash2, threshold):
     equal_bits = combined.count('1')
     return equal_bits / HASH_BITS > threshold
 
+def sim_hash_compare(sim_hash1, sim_hash2, threshold):
+    x =sim_hash1 ^ sim_hash2
+    diff_bits = x.bit_count()
+    return (1 - diff_bits / HASH_BITS) > threshold
+
 def is_similar(word_count: Counter):
     '''
     Determines if a page is similar to previous pages based on word_count.
@@ -318,10 +301,44 @@ def is_similar(word_count: Counter):
         if sim_hash_compare(sim, other_hash, SIMILAR_THRESHOLD):
             return True
     hash_cache.add(sim)
+    if len(hash_cache) > 5000: # limits hash cache to previous 5k
+        hash_cache.pop()
     return False
 
+def is_exact(size):
+    '''
+    Determines if a page is exact.
+    '''
+    # This function will match the size for all sizes of the webpages. If it is an exact match, it will return true.
+    # We will not be using this, since we have similarity check.
+    return size in sizes # sizes would be a set of all previous sizes, but we won't have that, replaced by simhash.
+
 def is_too_large(resp):
+    '''
+    Determines if a page is too large.
+    '''
     content_length = resp.raw_response.headers.get('Content-Length')
     if content_length and int(content_length) > SIZE_LIMIT:
         return True
     return len(resp.raw_response.content) > SIZE_LIMIT
+
+def valid_cache_status(status):
+    match status:
+        case 600: # request malformed
+            raise Exception("Status 600: request is malformed")
+        case 601: # failed download, skip
+            return False
+        case 602: # bad server, skip
+            return False
+        case 603: # incorrect http/https
+            raise Exception("Status 603: Not http or https")
+        case 604: # Bad domain, skip
+            return False
+        case 605: # bad file extension, skip
+            return False
+        case 606: # Bad parsing
+            return Exception("Status 606: Exception in parsin")
+        case 607: # Content too big, allow in for handling
+            return True
+        case 608: # Denied by domain robot rules, skip
+            return False
