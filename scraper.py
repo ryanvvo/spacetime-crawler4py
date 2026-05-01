@@ -10,7 +10,7 @@ import hashlib, shelve, signal, sys, atexit, warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 SHELF_PATH = "scraper.shelve"
-KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
+BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
@@ -106,7 +106,6 @@ def extract_next_links(url, resp):
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
     global longest_page, lp_url, unique_urls, word_cnt, subdomains
-
     if not resp:
         return []
 
@@ -128,14 +127,15 @@ def extract_next_links(url, resp):
 
     if is_similar(ret_count):
         return []
-
     links = set()
-    for tag in soup.find_all('a', href=True):
+    tags = soup.find_all('a', href=True)
+    print(len(tags))
+    for tag in tags:
         absolute_link = safe_urljoin(url_c, tag['href'])
         if not absolute_link: continue
 
         new_url, frag = urldefrag(absolute_link)
-        # new_url = strip_bad_queries(new_url)
+        new_url = strip_bad_queries(new_url)
 
         links.add(new_url)
 
@@ -151,7 +151,7 @@ def extract_next_links(url, resp):
     if len(unique_urls) % PAGES_BTWN_UPDATE == 0:
         update_stats()
 
-    return list(links)
+    return links
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -177,7 +177,7 @@ def is_valid(url):
             return False
 
         #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', ]
+        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/Families/', '/junkyard/', '/pubs/']
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
@@ -190,6 +190,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
+            + r"|c|cpp|py|ipynb|h"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except TypeError:
@@ -239,7 +240,7 @@ def strip_bad_queries(url):
     
     # Parse and filter query params
     params = parse_qs(parsed.query, keep_blank_values=False)
-    filtered = {k: v for k, v in params.items() if k in KEEP_QUERY_PARAM}
+    filtered = {k: v for k, v in params.items() if k not in BAD_QUERY}
     new_query = urlencode(sorted(filtered.items()), doseq=True)
     # Rebuild
     return parsed._replace(query=new_query).geturl()
