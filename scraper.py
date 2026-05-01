@@ -4,9 +4,11 @@ from urllib.parse import urlparse, urldefrag, urljoin, urlencode, parse_qs
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
 from urllib.robotparser import RobotFileParser
+import hashlib
 
 KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
-robot_cache = {} # cache for robots.txt; url : RobotFileParser
+HASH_BITS = 64 # Bits in a given hash
+SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 
 stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
@@ -30,7 +32,9 @@ lp_url = ""
 word_cnt = Counter()
 subdomains = defaultdict(set) #would get one with longest length set at the end
 
-
+# caches
+robot_cache = {} # cache for robots.txt; url : RobotFileParser
+hash_cache = set() # cache for the hash values of sites
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
@@ -63,9 +67,13 @@ def extract_next_links(url, resp):
     unique_urls.add(url_c)
 
     soup = BeautifulSoup(resp.raw_response.content, "lxml")
+    all_text = soup.get_text(separator=' ', strip=True)
+    ret_count, total = tokenize(all_text)
+
+    if is_similar(ret_count):
+        return []
 
     links = set()
-
     for tag in soup.find_all('a', href=True):
         absolute_link = safe_urljoin(url_c, tag['href'])
         if not absolute_link: continue
@@ -73,14 +81,10 @@ def extract_next_links(url, resp):
         new_url, frag = urldefrag(absolute_link)
         new_url = strip_bad_queries(new_url)
 
-        if not (new_url in links):
-            links.add(new_url)
+        links.add(new_url)
 
     upd = urlparse(url_c).netloc.lower()
     subdomains[upd].add(url_c)
-
-    all_text = soup.get_text(separator=' ', strip=True)
-    ret_count, total = tokenize(all_text)
 
     if total > longest_page:
         lp_url = url_c
@@ -201,3 +205,52 @@ def is_valid_robots(url, parsed_url, user_agent = 'IR S26'):
     if rp is None:
         return True  # can't reach robots.txt — allow by default
     return rp.can_fetch(user_agent, url)
+
+def hashify(token):
+    '''
+    Hash a token to a hash value. We use this instead of Python's built-in hash function because this is determinstic.
+    '''
+    return int(hashlib.md5(token.encode('utf-8')).hexdigest(), 16)
+
+def sim_hash(word_count: Counter):
+    '''
+    Given the word count, returns the SimHash of the page.
+    '''
+    bit_vector = [0] * HASH_BITS
+    for token, weight in word_count.items():
+        mask = 1
+        hash_token = hashify(token)
+        for i in range(HASH_BITS):
+            if hash_token & mask:
+                bit_vector[i] += weight
+            else:
+                bit_vector[i] -= weight
+            mask <<= 1
+
+    sim = 0
+    mask = 1
+    for i in range(HASH_BITS):
+        if bit_vector[i] > 0:
+            sim |= mask
+        mask <<= 1
+    
+    return sim
+
+def sim_hash_compare(sim_hash1, sim_hash2, threshold):
+    '''
+    Compares the 2 simhash and returns True if it meets the threshold and is similar, else False.
+    '''
+    combined = bin(~(sim_hash1 ^ sim_hash2) & 0xFFFFFFFFFFFFFFFF)
+    equal_bits = combined.count('1')
+    return equal_bits / HASH_BITS > threshold
+
+def is_similar(word_count: Counter):
+    '''
+    Determines if a page is similar to previous pages based on word_count.
+    '''
+    sim = sim_hash(word_count)
+    for other_hash in hash_cache:
+        if sim_hash_compare(sim, other_hash, SIMILAR_THRESHOLD):
+            return True
+    hash_cache.add(sim)
+    return False
