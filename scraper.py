@@ -1,5 +1,6 @@
 import re
-from urllib.parse import urlparse, urldefrag, urljoin, urlencode, parse_qs
+import os
+from urllib.parse import urlparse, urldefrag, urljoin
 
 from bs4 import BeautifulSoup
 from collections import Counter, defaultdict
@@ -10,7 +11,7 @@ KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 
-stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
+stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
                   'could','couldn\'t','did','didn\'t','do','does','doesn\'t','doing','don\'t','down','during','each',
                   'few','for','from','further','had','hadn\'t','has','hasn\'t','have','haven\'t','having','he','he\'d',
@@ -23,14 +24,15 @@ stop_words = ['a', 'about', 'above', 'after','again','against','all','am','an','
                   'those','through','to','too','under','until','up','very','was','wasn\'t','we','we\'d','we\'ll','we\'re',
                   'we\'ve','were','weren\'t','what','what\'s','when','when\'s','where','where\'s','which','while','who',
                   'who\'s','whom','why','why\'s','with','won\'t','would','wouldn\'t','you','you\'d','you\'ll','you\'re',
-                  'you\'ve','your','yours','yourself', 'yourselves']
+                  'you\'ve','your','yours','yourself', 'yourselves'])
 
-#currently not being printed anywhere.
+
+pages_btwn_update = 100
 unique_urls = set()
 longest_page = 0
 lp_url = ""
 word_cnt = Counter()
-subdomains = defaultdict(set) #would get one with longest length set at the end
+subdomains = defaultdict(set) 
 
 # caches
 robot_cache = {} # cache for robots.txt; url : RobotFileParser
@@ -49,7 +51,7 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    global longest_page, lp_url, unique_urls, word_cnt, subdomains 
+    global longest_page, lp_url, unique_urls, word_cnt, subdomains, pages_btwn_update
 
     if not resp:
         return []
@@ -57,7 +59,7 @@ def extract_next_links(url, resp):
     if not resp.status == 200:
         return [] 
     
-    if not (resp.raw_response.url and resp.raw_response.content):
+    if not (resp.raw_response and resp.raw_response.url and resp.raw_response.content):
         return []
     
     url_c, fr = urldefrag(resp.raw_response.url)
@@ -92,6 +94,8 @@ def extract_next_links(url, resp):
 
     word_cnt.update(ret_count)
     
+    if len(unique_urls) % pages_btwn_update == 0:
+        update_stats()
 
     return list(links)
 
@@ -171,6 +175,28 @@ def safe_urljoin(url_c, tag):
 
     except:
         return None
+    
+def update_stats():
+    temp = "output.txt.tmp"
+    fin = "output.txt"
+
+    with open(temp, "w") as outFile:
+        outFile.write(f"Number of unique pages: {len(unique_urls)}\n")  # Using f-strings (Python 3.6+)
+        outFile.write("Longest page: " + str(lp_url) + f", with {longest_page} words.\n")
+
+        outFile.write("Top 50 words:\n")
+        top_50 = word_cnt.most_common(50)
+        for word, count in top_50:
+           outFile.write(f"{word}: {count}\n")
+
+        outFile.write("Subdomains and the number unique pages detected:\n")
+        for url, sub in sorted(subdomains.items()):
+            outFile.write(f"{url}, {len(sub)}\n")
+
+    os.replace(temp, fin)
+  
+
+
 
 def strip_bad_queries(url):
     '''
