@@ -30,7 +30,6 @@ stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','a
                   'who\'s','whom','why','why\'s','with','won\'t','would','wouldn\'t','you','you\'d','you\'ll','you\'re',
                   'you\'ve','your','yours','yourself', 'yourselves'])
 
-
 with shelve.open(SHELF_PATH) as db:
     unique_urls  = db.get('unique_urls',  set())
     longest_page = db.get('longest_page', 0)
@@ -39,6 +38,17 @@ with shelve.open(SHELF_PATH) as db:
     subdomains   = db.get('subdomains',    defaultdict(set))
     hash_cache   = db.get('hash_cache',  set())
     robot_cache  = db.get('robot_cache',  {})
+
+def update_shelf():
+    global longest_page, lp_url, unique_urls, word_cnt, subdomains
+    with shelve.open(SHELF_PATH) as db:
+        unique_urls  = db.get('unique_urls',  set())
+        longest_page = db.get('longest_page', 0)
+        lp_url       = db.get('lp_url',       '')
+        word_cnt     = db.get('word_cnt',      Counter())
+        subdomains   = db.get('subdomains',    defaultdict(set))
+        hash_cache   = db.get('hash_cache',  set())
+        robot_cache  = db.get('robot_cache',  {})
 
 def save_shelf():
     with shelve.open(SHELF_PATH) as db:
@@ -95,7 +105,7 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    global longest_page, lp_url, unique_urls, word_cnt, subdomains, pages_btwn_update
+    global longest_page, lp_url, unique_urls, word_cnt, subdomains
 
     if not resp:
         return []
@@ -125,7 +135,7 @@ def extract_next_links(url, resp):
         if not absolute_link: continue
 
         new_url, frag = urldefrag(absolute_link)
-        new_url = strip_bad_queries(new_url)
+        # new_url = strip_bad_queries(new_url)
 
         links.add(new_url)
 
