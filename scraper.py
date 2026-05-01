@@ -12,10 +12,6 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SHELF_PATH = "scraper.shelve"
-<<<<<<< HEAD
-=======
-BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype'}
->>>>>>> d94cfe18d256d6b97350f02b361a3af61db31b95
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
@@ -146,7 +142,6 @@ def extract_next_links(url, resp):
     if is_similar(ret_count):
         unique_urls.add(url_c)
         return []
-<<<<<<< HEAD
 
     # Data Logging
     unique_urls.add(url_c)
@@ -161,8 +156,6 @@ def extract_next_links(url, resp):
     word_cnt.update(ret_count)
 
     # Link Extraction
-=======
->>>>>>> d94cfe18d256d6b97350f02b361a3af61db31b95
     links = set()
     tags = soup.find_all('a', href=True)
     print(len(tags))
@@ -205,7 +198,6 @@ def is_valid(url):
         if not is_valid_robots(url_c, parsed):
             return False
 
-<<<<<<< HEAD
         # traps to avoid
         bad = [
             'do=diff', 'do=media', 'do=edit', 'do=export', # Block Wiki actions
@@ -217,10 +209,6 @@ def is_valid(url):
         date_pattern = re.compile(r'\d{4}[-/]\d{2}[-/]\d{2}') 
         if date_pattern.search(parsed.path):
             return False
-=======
-        #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/Families/', '/junkyard/', '/pubs/', 'login']
->>>>>>> d94cfe18d256d6b97350f02b361a3af61db31b95
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
@@ -286,13 +274,9 @@ def strip_bad_queries(url):
     
     # Parse and filter query params
     params = parse_qs(parsed.query, keep_blank_values=False)
-<<<<<<< HEAD
 
 
     filtered = {k: v for k, v in params.items() if k.lower() not in BAN_QUERY_PARAMS}
-=======
-    filtered = {k: v for k, v in params.items() if k not in BAD_QUERY}
->>>>>>> d94cfe18d256d6b97350f02b361a3af61db31b95
     new_query = urlencode(sorted(filtered.items()), doseq=True)
     # Rebuild
     return parsed._replace(query=new_query).geturl()
@@ -366,12 +350,9 @@ def is_similar(word_count: Counter):
             return True
     hash_cache.add(sim)
     return False
-<<<<<<< HEAD
-=======
 
 def is_too_large(resp):
     content_length = resp.raw_response.headers.get('Content-Length')
     if content_length and int(content_length) > SIZE_LIMIT:
         return True
     return len(resp.raw_response.content) > SIZE_LIMIT
->>>>>>> d94cfe18d256d6b97350f02b361a3af61db31b95
