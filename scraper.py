@@ -1,3 +1,4 @@
+from datetime import date
 import re
 import os
 from urllib.parse import urlparse, urldefrag, urljoin, parse_qs, urlencode
@@ -10,10 +11,10 @@ import hashlib, shelve, signal, sys, atexit, warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 SHELF_PATH = "scraper.shelve"
-KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
+
 
 stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
@@ -29,6 +30,11 @@ stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','a
                   'we\'ve','were','weren\'t','what','what\'s','when','when\'s','where','where\'s','which','while','who',
                   'who\'s','whom','why','why\'s','with','won\'t','would','wouldn\'t','you','you\'d','you\'ll','you\'re',
                   'you\'ve','your','yours','yourself', 'yourselves'])
+
+BAN_QUERY_PARAMS = {
+    'do', 'rev', 'rev2[]', 'difftype', 'ns', 
+    'tab_details', 'tab_files', 'image', 'can_fetch'
+}
 
 with shelve.open(SHELF_PATH) as db:
     unique_urls  = db.get('unique_urls',  set())
@@ -116,19 +122,36 @@ def extract_next_links(url, resp):
     if not (resp.raw_response and resp.raw_response.url and resp.raw_response.content):
         return []
     
+    # Duplicate Check
     url_c, fr = urldefrag(resp.raw_response.url)
+    url_c = url_c.lower()
 
     if url_c in unique_urls:
         return []
-    unique_urls.add(url_c)
 
+    # Content Processing
     soup = BeautifulSoup(resp.raw_response.content, "lxml")
     all_text = soup.get_text(separator=' ', strip=True)
     ret_count, total = tokenize(all_text)
 
+    # Similarity Check
     if is_similar(ret_count):
+        unique_urls.add(url_c)
         return []
 
+    # Data Logging
+    unique_urls.add(url_c)
+    
+    upd = urlparse(url_c).netloc.lower()
+    subdomains[upd].add(url_c)
+
+    if total > longest_page:
+        lp_url = url_c
+        longest_page = total
+
+    word_cnt.update(ret_count)
+
+    # Link Extraction
     links = set()
     for tag in soup.find_all('a', href=True):
         absolute_link = safe_urljoin(url_c, tag['href'])
@@ -139,14 +162,7 @@ def extract_next_links(url, resp):
 
         links.add(new_url)
 
-    upd = urlparse(url_c).netloc.lower()
-    subdomains[upd].add(url_c)
-
-    if total > longest_page:
-        lp_url = url_c
-        longest_page = total
-
-    word_cnt.update(ret_count)
+    
     
     if len(unique_urls) % PAGES_BTWN_UPDATE == 0:
         update_stats()
@@ -176,8 +192,17 @@ def is_valid(url):
         if not is_valid_robots(url_c, parsed):
             return False
 
-        #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', ]
+        # traps to avoid
+        bad = [
+            'do=diff', 'do=media', 'do=edit', 'do=export', # Block Wiki actions
+            'share=', 'format=xml', 'action=download',      # Block file exports
+            'ical=1', 'calendar', 'events'                  # Block infinite calendars
+        ]
+
+        # matches dates in the format YYYY-MM-DD or YYYY/MM/DD
+        date_pattern = re.compile(r'\d{4}[-/]\d{2}[-/]\d{2}') 
+        if date_pattern.search(parsed.path):
+            return False
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
@@ -233,13 +258,18 @@ def safe_urljoin(url_c, tag):
   
 def strip_bad_queries(url):
     '''
-    Given a url, this function strips query params not in KEEP_QUERY_PARAM
+    Given a url, this function strips query params in BAN_QUERY_PARAMS 
+    and returns the cleaned url. 
+    This is to avoid crawling the same page with different 
+    query params that don't change the content.
     '''
     parsed = urlparse(url)
     
     # Parse and filter query params
     params = parse_qs(parsed.query, keep_blank_values=False)
-    filtered = {k: v for k, v in params.items() if k in KEEP_QUERY_PARAM}
+
+
+    filtered = {k: v for k, v in params.items() if k.lower() not in BAN_QUERY_PARAMS}
     new_query = urlencode(sorted(filtered.items()), doseq=True)
     # Rebuild
     return parsed._replace(query=new_query).geturl()
