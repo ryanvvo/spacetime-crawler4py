@@ -1,15 +1,19 @@
 import re
 import os
-from urllib.parse import urlparse, urldefrag, urljoin
+from urllib.parse import urlparse, urldefrag, urljoin, parse_qs, urlencode
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from collections import Counter, defaultdict
 from urllib.robotparser import RobotFileParser
-import hashlib
 
+import hashlib, shelve, signal, sys, atexit, warnings
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+SHELF_PATH = "scraper.shelve"
 KEEP_QUERY_PARAM = {'id', 'page_id', 'nid', 'dept', 'college', 'term', 'semester', 'year', 'people', 'p'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
+PAGES_BTWN_UPDATE = 100
 
 stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
@@ -27,16 +31,56 @@ stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','a
                   'you\'ve','your','yours','yourself', 'yourselves'])
 
 
-pages_btwn_update = 100
-unique_urls = set()
-longest_page = 0
-lp_url = ""
-word_cnt = Counter()
-subdomains = defaultdict(set) 
+with shelve.open(SHELF_PATH) as db:
+    unique_urls  = db.get('unique_urls',  set())
+    longest_page = db.get('longest_page', 0)
+    lp_url       = db.get('lp_url',       '')
+    word_cnt     = db.get('word_cnt',      Counter())
+    subdomains   = db.get('subdomains',    defaultdict(set))
+    hash_cache   = db.get('hash_cache',  set())
+    robot_cache  = db.get('robot_cache',  {})
 
-# caches
-robot_cache = {} # cache for robots.txt; url : RobotFileParser
-hash_cache = set() # cache for the hash values of sites
+def save_shelf():
+    with shelve.open(SHELF_PATH) as db:
+        db['unique_urls']   = unique_urls
+        db['longest_page']  = longest_page
+        db['lp_url']        = lp_url
+        db['word_cnt']      = word_cnt
+        db['subdomains']    = subdomains
+        db['robot_cache']   = robot_cache
+        db['page_hashes']   = hash_cache
+
+def update_stats():
+    save_shelf()
+    temp = "output.txt.tmp"
+    fin = "output.txt"
+
+    with open(temp, "w") as outFile:
+        outFile.write(f"Number of unique pages: {len(unique_urls)}\n")  # Using f-strings (Python 3.6+)
+        outFile.write("Longest page: " + str(lp_url) + f", with {longest_page} words.\n")
+
+        outFile.write("Top 50 words:\n")
+        top_50 = word_cnt.most_common(50)
+        for word, count in top_50:
+           outFile.write(f"{word}: {count}\n")
+
+        outFile.write("\nSubdomains and the number unique pages detected:\n")
+        for url, sub in sorted(subdomains.items()):
+            outFile.write(f"{url}, {len(sub)}\n")
+
+    os.replace(temp, fin)
+
+def handle_interrupt(signum, frame):
+    print("\nSaving state...")
+    update_stats()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT,  handle_interrupt)
+signal.signal(signal.SIGTERM, handle_interrupt)
+atexit.register(update_stats)
+
+
+
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
@@ -94,7 +138,7 @@ def extract_next_links(url, resp):
 
     word_cnt.update(ret_count)
     
-    if len(unique_urls) % pages_btwn_update == 0:
+    if len(unique_urls) % PAGES_BTWN_UPDATE == 0:
         update_stats()
 
     return list(links)
@@ -176,28 +220,7 @@ def safe_urljoin(url_c, tag):
     except:
         return None
     
-def update_stats():
-    temp = "output.txt.tmp"
-    fin = "output.txt"
-
-    with open(temp, "w") as outFile:
-        outFile.write(f"Number of unique pages: {len(unique_urls)}\n")  # Using f-strings (Python 3.6+)
-        outFile.write("Longest page: " + str(lp_url) + f", with {longest_page} words.\n")
-
-        outFile.write("Top 50 words:\n")
-        top_50 = word_cnt.most_common(50)
-        for word, count in top_50:
-           outFile.write(f"{word}: {count}\n")
-
-        outFile.write("Subdomains and the number unique pages detected:\n")
-        for url, sub in sorted(subdomains.items()):
-            outFile.write(f"{url}, {len(sub)}\n")
-
-    os.replace(temp, fin)
   
-
-
-
 def strip_bad_queries(url):
     '''
     Given a url, this function strips query params not in KEEP_QUERY_PARAM
