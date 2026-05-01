@@ -2,18 +2,20 @@ import re
 import os
 from urllib.parse import urlparse, urldefrag, urljoin, parse_qs, urlencode
 
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning, MarkupResemblesLocatorWarning
 from collections import Counter, defaultdict
 from urllib.robotparser import RobotFileParser
 
 import hashlib, shelve, signal, sys, atexit, warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SHELF_PATH = "scraper.shelve"
-BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date'}
+BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
+SIZE_LIMIT = 1 * 1024 * 1024
 
 stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
                   'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
@@ -34,9 +36,9 @@ with shelve.open(SHELF_PATH) as db:
     unique_urls  = db.get('unique_urls',  set())
     longest_page = db.get('longest_page', 0)
     lp_url       = db.get('lp_url',       '')
-    word_cnt     = db.get('word_cnt',      Counter())
-    subdomains   = db.get('subdomains',    defaultdict(set))
-    hash_cache   = db.get('hash_cache',  set())
+    word_cnt     = db.get('word_cnt',     Counter())
+    subdomains   = db.get('subdomains',   defaultdict(set))
+    hash_cache   = db.get('hash_cache',   set())
     robot_cache  = db.get('robot_cache',  {})
 
 def update_shelf():
@@ -45,9 +47,9 @@ def update_shelf():
         unique_urls  = db.get('unique_urls',  set())
         longest_page = db.get('longest_page', 0)
         lp_url       = db.get('lp_url',       '')
-        word_cnt     = db.get('word_cnt',      Counter())
-        subdomains   = db.get('subdomains',    defaultdict(set))
-        hash_cache   = db.get('hash_cache',  set())
+        word_cnt     = db.get('word_cnt',     Counter())
+        subdomains   = db.get('subdomains',   defaultdict(set))
+        hash_cache   = db.get('hash_cache',   set())
         robot_cache  = db.get('robot_cache',  {})
 
 def save_shelf():
@@ -114,6 +116,9 @@ def extract_next_links(url, resp):
     
     if not (resp.raw_response and resp.raw_response.url and resp.raw_response.content):
         return []
+
+    if is_too_large(resp):
+        return []
     
     url_c, fr = urldefrag(resp.raw_response.url)
 
@@ -177,7 +182,7 @@ def is_valid(url):
             return False
 
         #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/Families/', '/junkyard/', '/pubs/']
+        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/Families/', '/junkyard/', '/pubs/', 'login']
 
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
@@ -314,3 +319,9 @@ def is_similar(word_count: Counter):
             return True
     hash_cache.add(sim)
     return False
+
+def is_too_large(resp):
+    content_length = resp.raw_response.headers.get('Content-Length')
+    if content_length and int(content_length) > SIZE_LIMIT:
+        return True
+    return len(resp.raw_response.content) > SIZE_LIMIT
