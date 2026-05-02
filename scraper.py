@@ -11,34 +11,56 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SHELF_PATH = "scraper.shelve"
-BAD_QUERY = {'version', 'from', 'Keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype', 'C', 'rev2[]', 'ns', 'tab_details', 'tab_files', 'image', 'can_fetch', 'idx'}
+BAD_QUERY = {'version', 'from', 'keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype', 'c', 'd', 'rev2[]', 'ns', 'tab_details', 'tab_files', 'image', 'can_fetch', 'idx', 'action', 'format'}
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
 SIZE_LIMIT = 1 * 1024 * 1024
 
 
-stop_words = set(['a', 'about', 'above', 'after','again','against','all','am','an','and','any','are','aren\'t','as',
-                  'at','be','because','been','before','being','below','between','both','but','by','can\'t','cannot',
-                  'could','couldn\'t','did','didn\'t','do','does','doesn\'t','doing','don\'t','down','during','each',
-                  'few','for','from','further','had','hadn\'t','has','hasn\'t','have','haven\'t','having','he','he\'d',
-                  'he\'ll','he\'s','her','here','here\'s','hers','herself','him','himself','his','how','how\'s','i',
-                  'i\'d','i\'ll','i\'m','i\'ve','if','in','into','is','isn\'t','it','it\'s','its','itself','let\'s',
-                  'me','more','most','mustn\'t','my','myself','no','nor','not','of','off','on','once','only','or','other',
-                  'ought','our','ours','ourselves','out','over','own','same','shan\'t','she','she\'d','she\'ll','she\'s',
-                  'should','shouldn\'t','so','some','such','than','that','that\'s','the','their','theirs','them',
-                  'themselves','then','there','there\'s','these','they','they\'d','they\'ll','they\'re','they\'ve','this',
-                  'those','through','to','too','under','until','up','very','was','wasn\'t','we','we\'d','we\'ll','we\'re',
-                  'we\'ve','were','weren\'t','what','what\'s','when','when\'s','where','where\'s','which','while','who',
-                  'who\'s','whom','why','why\'s','with','won\'t','would','wouldn\'t','you','you\'d','you\'ll','you\'re',
-                  'you\'ve','your','yours','yourself', 'yourselves'])
+stop_words = {
+    "a", "able", "about", "above", "abst", "accordance", "according", "accordingly", "across", "act", "actually", "added", "adj", "affected", "affecting", "affects",
+    "after", "afterwards", "again", "against", "ah", "all", "almost", "alone", "along", "already", "also", "although", "always", "am", "among", "amongst", 
+    "an", "and", "announce", "another", "any", "anybody", "anyhow", "anymore", "anyone", "anything", "anyway", "anyways", "anywhere", "apparently",
+    "approximately", "are", "aren", "arent", "arise", "around", "as", "aside", "ask", "asking", "at", "auth", "available", "away", "awfully", "b", "back",
+    "be", "became", "because", "become", "becomes", "becoming", "been", "before", "beforehand", "begin", "beginning", "beginnings", "begins", "behind", "being",
+    "believe", "below", "beside", "besides", "between", "beyond", "biol", "both", "brief", "briefly", "but", "by", "c", "ca", "came", "can", "cannot", "can't",
+    "cause", "causes", "certain", "certainly", "co", "com", "come", "comes", "contain", "containing", "contains", "could", "couldnt", "d", "date", "did",
+    "didn't", "different", "do", "does", "doesn't", "doing", "done", "don't", "down", "downwards", "due", "during", "e", "each", "ed", "edu", "effect",
+    "eg", "eight", "eighty", "either", "else", "elsewhere", "end", "ending", "enough", "especially", "et", "et-al", "etc", "even", "ever", "every", "everybody", "everyone", "everything", "everywhere", "ex", "except", "f",
+    "far", "few", "ff", "fifth", "first", "five", "fix", "followed", "following", "follows", "for", "former", "formerly", "forth", "found", "four", "from","further", "furthermore", "g", "gave", "get", "gets", "getting", "give",
+    "given", "gives", "giving", "go", "goes", "gone", "got", "gotten", "h", "had", "happens", "hardly", "has", "hasn't", "have", "haven't", "having", "he", "hed", "hence", "her", "here", "hereafter", "hereby", "herein",
+    "heres", "hereupon", "hers", "herself", "hes", "hi", "hid", "him","himself", "his", "hither", "home", "how", "howbeit", "however", "hundred", "i", "id", "ie", "if", "i'll", "im", "immediate", "immediately",
+    "importance", "important", "in", "inc", "indeed", "index", "information", "instead", "into", "invention", "inward", "is", "isn't", "it", "itd", "it'll", "its", "itself", "i've", "j", "just", "k", "keep", "keeps",
+    "kept", "kg", "km", "know", "known", "knows", "l", "largely", "last", "lately", "later", "latter", "latterly", "least", "less", "lest", "let", "lets", "like", "liked", "likely", "line", "little", "'ll", "look",
+    "looking", "looks", "ltd", "m", "made", "mainly", "make", "makes", "many","may", "maybe", "me", "mean", "means", "meantime", "meanwhile", "merely", "mg", "might", "million", "miss", "ml", "more", "moreover", "most",
+    "mostly", "mr", "mrs", "much", "mug", "must", "my", "myself", "n", "na", "name", "namely", "nay", "nd", "near", "nearly", "necessarily", "necessary", "need", "needs", "neither", "never", "nevertheless", "new", "next", "nine",
+    "ninety", "no", "nobody", "non", "none", "nonetheless", "noone", "nor", "normally", "nos", "not", "noted", "nothing", "now", "nowhere", "o", "obtain", "obtained", "obviously", "of", "off", "often", "oh", "ok",
+    "okay", "old", "omitted", "on", "once", "one", "ones", "only", "onto", "or", "ord", "other", "others", "otherwise", "ought", "our", "ours",
+    "ourselves", "out", "outside", "over", "overall", "owing", "own", "p",  "page", "pages", "part", "particular", "particularly", "past", "per",
+    "perhaps", "placed", "please", "plus", "poorly", "possible", "possibly", "potentially", "pp", "predominantly", "present", "previously", "primarily", "probably", "promptly", "proud", "provides", "put", "q",
+    "que", "quickly", "quite", "qv", "r", "ran", "rather", "rd", "re","readily", "really", "recent", "recently", "ref", "refs", "regarding","regardless", "regards", "related", "relatively", "research",
+    "respectively", "resulted", "resulting", "results", "right", "run", "s", "said", "same", "saw", "say", "saying", "says", "sec", "section", "see",
+    "seeing", "seem", "seemed", "seeming", "seems", "seen", "self", "selves","sent", "seven", "several", "shall", "she", "shed", "she'll", "shes",
+    "should", "shouldn't", "show", "showed", "shown", "showns", "shows",  "significant", "significantly", "similar", "similarly", "since", "six",
+    "slightly", "so", "some", "somebody", "somehow", "someone", "somethan", "something", "sometime", "sometimes", "somewhat", "somewhere", "soon",  "sorry", "specifically", "specified", "specify", "specifying", "still",
+    "stop", "strongly", "sub", "substantially", "successfully", "such", "sufficiently", "suggest", "sup", "sure", "t", "take", "taken", "taking", "tell", "tends", "th", "than", "thank", "thanks", "thanx", "that",
+    "that'll", "thats", "that've", "the", "their", "theirs", "them", "themselves", "then", "thence", "there", "thereafter", "thereby", "thered", "therefore", "therein", "there'll", "thereof", "therere", "theres", 
+    "thereto", "thereupon", "there've", "these", "they", "theyd", "they'll", "theyre", "they've", "think", "this", "those", "thou", "though", "thoughh", "thousand", "throug", "through", "throughout", "thru", "thus",
+    "til", "tip", "to", "together", "too", "took", "toward", "towards", "tried", "tries", "truly", "try", "trying", "ts", "twice", "two", "u", "un", "under", "unfortunately", "unless", "unlike", "unlikely", "until",
+    "unto", "up", "upon", "ups", "us", "use", "used", "useful", "usefully", "usefulness", "uses", "using", "usually", "v", "value", "various", "'ve", "very", "via", "viz", "vol", "vols", "vs", "w", "want", "wants", "was",
+    "wasnt", "way", "we", "wed", "welcome", "we'll", "went", "were", "werent", "we've", "what", "whatever", "what'll", "whats", "when", "whence", "whenever", "where", "whereafter", "whereas", "whereby", "wherein",
+    "wheres", "whereupon", "wherever", "whether", "which", "while", "whim", "whither", "who", "whod", "whoever", "whole", "who'll", "whom", "whomever", "whos", "whose", "why", "widely", "willing", "wish", "with",
+    "within", "without", "wont", "words", "world", "would", "wouldnt", "www", "x", "y", "yes", "yet", "you", "youd", "you'll", "your", "youre", "yours", "yourself", "yourselves", "you've", "z", "zero",
+    "1","2","3","4","5","6","7","8","9","0"
+}
 
 with shelve.open(SHELF_PATH) as db:
     unique_urls  = db.get('unique_urls',  set())
     longest_page = db.get('longest_page', 0)
     lp_url       = db.get('lp_url',       '')
     word_cnt     = db.get('word_cnt',     Counter())
-    subdomains   = db.get('subdomains',   defaultdict(set))
+    subdomains   = db.get('subdomains',   defaultdict(int))
     hash_cache   = db.get('hash_cache',   set())
 
 def update_shelf():
@@ -48,7 +70,7 @@ def update_shelf():
         longest_page = db.get('longest_page', 0)
         lp_url       = db.get('lp_url',       '')
         word_cnt     = db.get('word_cnt',     Counter())
-        subdomains   = db.get('subdomains',   defaultdict(set))
+        subdomains   = db.get('subdomains',   defaultdict(int))
         hash_cache   = db.get('hash_cache',   set())
 
 def save_shelf():
@@ -76,7 +98,7 @@ def update_stats():
 
         outFile.write("\nSubdomains and the number unique pages detected:\n")
         for url, sub in sorted(subdomains.items()):
-            outFile.write(f"{url}, {len(sub)}\n")
+            outFile.write(f"{url}, {sub}\n")
 
     os.replace(temp, fin)
 
@@ -124,7 +146,6 @@ def extract_next_links(url, resp):
     
     # Duplicate Check
     url_c, fr = urldefrag(resp.raw_response.url)
-    url_c = url_c.lower()
     if url_c in unique_urls:
         return []
     if not is_valid(url_c):
@@ -138,19 +159,22 @@ def extract_next_links(url, resp):
     # Similarity Check
     if is_similar(ret_count):
         unique_urls.add(url_c)
+        upd = urlparse(url_c).netloc.lower()
+        subdomains[upd] += 1
         return []
 
     # Data Logging
     unique_urls.add(url_c)
-    
     upd = urlparse(url_c).netloc.lower()
-    subdomains[upd].add(url_c)
+    subdomains[upd] += 1
 
     if total > longest_page:
         lp_url = url_c
         longest_page = total
 
     word_cnt.update(ret_count)
+    if len(word_cnt) > 50000:
+        word_cnt = Counter(dict(word_cnt.most_common(20000))) # remove 30000 least common words to save memory
 
     # Link Extraction
     links = set()
@@ -206,14 +230,14 @@ def is_valid(url):
             return False
 
         return not re.match(
-            r".*\.(css|js|bmp|gif|jpe?g|ico"
+            r".*\.(css|js|bmp|gif|jpe?g|ico|img|json"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
             + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv|lif"
-            + r"|c|cpp|py|ipynb|h"
+            + r"|c|cpp|py|ipynb|h|java|apk"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except TypeError:
@@ -268,7 +292,7 @@ def strip_bad_queries(url):
     params = parse_qs(parsed.query, keep_blank_values=False)
 
 
-    filtered = {k: v for k, v in params.items() if k.lower() not in BAN_QUERY_PARAMS}
+    filtered = {k: v for k, v in params.items() if k.lower() not in BAD_QUERY}
     new_query = urlencode(sorted(filtered.items()), doseq=True)
     # Rebuild
     return parsed._replace(query=new_query).geturl()
