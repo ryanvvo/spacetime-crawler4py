@@ -61,7 +61,7 @@ with shelve.open(SHELF_PATH) as db:
     lp_url       = db.get('lp_url',       '')
     word_cnt     = db.get('word_cnt',     Counter())
     subdomains   = db.get('subdomains',   defaultdict(int))
-    hash_cache   = db.get('hash_cache',   deque(maxlen=50000))
+    hash_cache   = db.get('hash_cache',   deque(maxlen=5000))
 
 def update_shelf():
     global longest_page, lp_url, unique_urls, word_cnt, subdomains
@@ -71,7 +71,7 @@ def update_shelf():
         lp_url       = db.get('lp_url',       '')
         word_cnt     = db.get('word_cnt',     Counter())
         subdomains   = db.get('subdomains',   defaultdict(int))
-        hash_cache   = db.get('hash_cache',   deque(maxlen=50000))
+        hash_cache   = db.get('hash_cache',   deque(maxlen=5000))
 
 def save_shelf():
     with shelve.open(SHELF_PATH) as db:
@@ -110,8 +110,6 @@ def handle_interrupt(signum, frame):
 signal.signal(signal.SIGINT,  handle_interrupt)
 signal.signal(signal.SIGTERM, handle_interrupt)
 atexit.register(update_stats)
-
-
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -173,8 +171,8 @@ def extract_next_links(url, resp):
         longest_page = total
 
     word_cnt.update(ret_count)
-    if len(word_cnt) > 50000:
-        word_cnt = Counter(dict(word_cnt.most_common(20000))) # remove 30000 least common words to save memory
+    if len(word_cnt) > 10000:
+        word_cnt = Counter(dict(word_cnt.most_common(2500))) # remove 7500 least common words to save memory
 
     # Link Extraction
     links = set()
@@ -215,7 +213,8 @@ def is_valid(url):
         ): return False
 
         #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom', '/pix/', '/families/', '/junkyard/', '/pubs/', 'login',
+        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom','login',
+            '/pix/', '/families/', '/junkyard/', '/pubs/', '/twist/', # Block large datasets
             'do=diff', 'do=media', 'do=edit', 'do=export', # Block Wiki actions
             'share=', 'format=xml', 'action=download',      # Block file exports
             'ical=1', 'calendar', 'events'                  # Block infinite calendars
