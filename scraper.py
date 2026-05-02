@@ -4,7 +4,7 @@ import os
 from urllib.parse import urlparse, urldefrag, urljoin, parse_qs, urlencode
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning, MarkupResemblesLocatorWarning
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 
 import hashlib, shelve, signal, sys, atexit, warnings
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -61,7 +61,7 @@ with shelve.open(SHELF_PATH) as db:
     lp_url       = db.get('lp_url',       '')
     word_cnt     = db.get('word_cnt',     Counter())
     subdomains   = db.get('subdomains',   defaultdict(int))
-    hash_cache   = db.get('hash_cache',   set())
+    hash_cache   = db.get('hash_cache',   deque(maxlen=50000))
 
 def update_shelf():
     global longest_page, lp_url, unique_urls, word_cnt, subdomains
@@ -71,7 +71,7 @@ def update_shelf():
         lp_url       = db.get('lp_url',       '')
         word_cnt     = db.get('word_cnt',     Counter())
         subdomains   = db.get('subdomains',   defaultdict(int))
-        hash_cache   = db.get('hash_cache',   set())
+        hash_cache   = db.get('hash_cache',   deque(maxlen=50000))
 
 def save_shelf():
     with shelve.open(SHELF_PATH) as db:
@@ -331,12 +331,7 @@ def sim_hash_compare(sim_hash1, sim_hash2, threshold):
     '''
     Compares the 2 simhash and returns True if it meets the threshold and is similar, else False.
     '''
-    combined = bin(~(sim_hash1 ^ sim_hash2) & 0xFFFFFFFFFFFFFFFF)
-    equal_bits = combined.count('1')
-    return equal_bits / HASH_BITS > threshold
-
-def sim_hash_compare(sim_hash1, sim_hash2, threshold):
-    x =sim_hash1 ^ sim_hash2
+    x = sim_hash1 ^ sim_hash2
     diff_bits = x.bit_count()
     return (1 - diff_bits / HASH_BITS) > threshold
 
@@ -348,9 +343,7 @@ def is_similar(word_count: Counter):
     for other_hash in hash_cache:
         if sim_hash_compare(sim, other_hash, SIMILAR_THRESHOLD):
             return True
-    hash_cache.add(sim)
-    if len(hash_cache) > 5000: # limits hash cache to previous 5k
-        hash_cache.pop()
+    hash_cache.append(sim)
     return False
 
 def is_exact(size):
