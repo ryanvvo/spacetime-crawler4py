@@ -18,7 +18,7 @@ BAD_SUBDOMAINS = frozenset({
     "grape.ics.uci.edu" # Student projects
     })
 HASH_BITS = 64 # Bits in a given hash
-SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
+SIMILAR_THRESHOLD = .95 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
 SIZE_LIMIT = 5 * 1024 * 1024
 MIN_PAGE_TOKENS = 50
@@ -69,7 +69,7 @@ with shelve.open(SHELF_PATH) as db:
     hash_cache   = db.get('hash_cache',   deque(maxlen=5000))
 
 def update_shelf():
-    global longest_page, lp_url, unique_urls, word_cnt, subdomains
+    global longest_page, lp_url, unique_urls, word_cnt, subdomains, hash_cache
     with shelve.open(SHELF_PATH) as db:
         unique_urls  = db.get('unique_urls',  set())
         longest_page = db.get('longest_page', 0)
@@ -158,13 +158,10 @@ def extract_next_links(url, resp):
 
     # Content Processing
     soup = BeautifulSoup(resp.raw_response.content, "lxml")
-    for tag in soup(['script', 'style', 'noscript', 'header','footer','nav','meta', 'aside']): # Cleans content, saves ram
+    for tag in soup(['script', 'style', 'noscript', 'meta']): # Tags to remove
         tag.decompose()
     all_text = soup.get_text(separator=' ', strip=True)
     ret_count, total = tokenize(all_text)
-
-    if total < MIN_PAGE_TOKENS: # Little information gain
-        return []
 
     # Large page (1 MB), low information (<1% words)
     if len(resp.raw_response.content) > (1*1024*1024) and total < (1*1024*1024)/100:
@@ -184,16 +181,6 @@ def extract_next_links(url, resp):
     upd = urlparse(url_c).netloc.lower()
     subdomains[upd] += 1
 
-    # Updated longest page
-    if total > longest_page:
-        lp_url = url_c
-        longest_page = total
-
-    # Updated word count
-    word_cnt.update(ret_count)
-    if len(word_cnt) > 10000: # Size limit for memory
-        word_cnt = Counter(dict(word_cnt.most_common(2500))) # remove 7500 least common words to save memory
-
     # Link Extraction
     links = set()
     for tag in soup.find_all('a', href=True):
@@ -206,7 +193,19 @@ def extract_next_links(url, resp):
         links.add(new_url)
 
     
+    if total < MIN_PAGE_TOKENS: # Small pages have skipped analytics
+        return list(links)
     
+    # Updated longest page
+    if total > longest_page:
+        lp_url = url_c
+        longest_page = total
+
+    # Updated word count
+    word_cnt.update(ret_count)
+    if len(word_cnt) > 4000: # Size limit for memory
+        word_cnt = Counter(dict(word_cnt.most_common(2000))) # remove 2000 least common words to save memory
+
     if len(unique_urls) % PAGES_BTWN_UPDATE == 0:
         update_stats()
 
@@ -240,7 +239,7 @@ def is_valid(url):
             return False
         # Path too deep
         depth = len([segment for segment in parsed.path.split('/') if segment])
-        if depth > 6:
+        if depth > 8:
             return False
 
         # Traps
@@ -249,7 +248,7 @@ def is_valid(url):
             '/pix/', '/families/', '/junkyard/', '/pubs/', '/twist/', # Block large datasets
             'do=diff', 'do=media', 'do=edit', 'do=export', # Block Wiki actions
             'share=', 'format=xml', 'action=download',      # Block file exports
-            'ical=1', '/calendar', '/events/'                  # Block infinite calendars
+            'ical=1', '/calendar' # Block infinite calendars
         ]
 
         # matches dates in the format YYYY-MM-DD or YYYY/MM/DD
