@@ -11,14 +11,19 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 SHELF_PATH = "scraper.shelve"
-BAD_QUERY = {'version', 'from', 'keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype', 'c', 'd', 'rev2[]', 'ns', 'tab_details', 'tab_files', 'image', 'can_fetch', 'idx', 'action', 'format'}
+BAD_QUERY = frozenset({'version', 'from', 'keywords', 'share', 'tribe-bar-date', 'rev', 'do', 'difftype', 'c', 'd', 'rev2[]', 'ns', 'tab_details', 'tab_files', 'image', 'can_fetch', 'idx', 'action', 'format'})
+BAD_SUBDOMAINS = frozenset({
+    "archive.ics.uci.edu", "archive-beta.ics.uci.edu", # ML databases
+    "wiki.ics.uci.edu", "swiki.ics.uci.edu", # Support Wiki (most content needs a login)
+    "grape.ics.uci.edu" # Student projects
+    })
 HASH_BITS = 64 # Bits in a given hash
 SIMILAR_THRESHOLD = .9 # Pages that are similar by 90% are considered near-identica pages.
 PAGES_BTWN_UPDATE = 100
-SIZE_LIMIT = 1 * 1024 * 1024
+SIZE_LIMIT = 5 * 1024 * 1024
+MIN_PAGE_TOKENS = 50
 
-
-stop_words = {
+STOP_WORDS = frozenset({
     "a", "able", "about", "above", "abst", "accordance", "according", "accordingly", "across", "act", "actually", "added", "adj", "affected", "affecting", "affects",
     "after", "afterwards", "again", "against", "ah", "all", "almost", "alone", "along", "already", "also", "although", "always", "am", "among", "amongst", 
     "an", "and", "announce", "another", "any", "anybody", "anyhow", "anymore", "anyone", "anything", "anyway", "anyways", "anywhere", "apparently",
@@ -53,7 +58,7 @@ stop_words = {
     "wheres", "whereupon", "wherever", "whether", "which", "while", "whim", "whither", "who", "whod", "whoever", "whole", "who'll", "whom", "whomever", "whos", "whose", "why", "widely", "willing", "wish", "with",
     "within", "without", "wont", "words", "world", "would", "wouldnt", "www", "x", "y", "yes", "yet", "you", "youd", "you'll", "your", "youre", "yours", "yourself", "yourselves", "you've", "z", "zero",
     "1","2","3","4","5","6","7","8","9","0"
-}
+})
 
 with shelve.open(SHELF_PATH) as db:
     unique_urls  = db.get('unique_urls',  set())
@@ -129,30 +134,41 @@ def extract_next_links(url, resp):
     if not resp:
         return []
 
-    if resp.status >= 600:
+    if resp.status >= 600: # Cache Server check
         if not valid_cache_status(resp.status):
             return []
 
-    if not resp.status == 200:
+    if not resp.status == 200: # HTML Status check
         return [] 
     
-    if not (resp.raw_response and resp.raw_response.url and resp.raw_response.content):
+    if not (resp.raw_response and resp.raw_response.url and resp.raw_response.content): # Empty url/page
         return []
 
-    if is_too_large(resp):
+    if is_too_large(resp): # Size check
         return []
     
     # Duplicate Check
     url_c, fr = urldefrag(resp.raw_response.url)
     if url_c in unique_urls:
         return []
+
+    # Check defragged url
     if not is_valid(url_c):
         return []
 
     # Content Processing
     soup = BeautifulSoup(resp.raw_response.content, "lxml")
+    for tag in soup(['script', 'style', 'noscript', 'header','footer','nav','meta', 'aside']): # Cleans content, saves ram
+        tag.decompose()
     all_text = soup.get_text(separator=' ', strip=True)
     ret_count, total = tokenize(all_text)
+
+    if total < MIN_PAGE_TOKENS: # Little information gain
+        return []
+
+    # Large page (1 MB), low information (<1% words)
+    if len(resp.raw_response.content) > (1*1024*1024) and total < (1*1024*1024)/100:
+        return []
 
     # Similarity Check
     if is_similar(ret_count):
@@ -161,17 +177,21 @@ def extract_next_links(url, resp):
         subdomains[upd] += 1
         return []
 
-    # Data Logging
+    # ALL CHECKS ARE FINISHED, PROCESSING URL
+
+    # Updated unique_url and subdomains
     unique_urls.add(url_c)
     upd = urlparse(url_c).netloc.lower()
     subdomains[upd] += 1
 
+    # Updated longest page
     if total > longest_page:
         lp_url = url_c
         longest_page = total
 
+    # Updated word count
     word_cnt.update(ret_count)
-    if len(word_cnt) > 10000:
+    if len(word_cnt) > 10000: # Size limit for memory
         word_cnt = Counter(dict(word_cnt.most_common(2500))) # remove 7500 least common words to save memory
 
     # Link Extraction
@@ -190,7 +210,7 @@ def extract_next_links(url, resp):
     if len(unique_urls) % PAGES_BTWN_UPDATE == 0:
         update_stats()
 
-    return links
+    return list(links)
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -205,19 +225,31 @@ def is_valid(url):
         
         dom = parsed.netloc.lower()
 
+        # Not in domain
         if not (
             dom == 'ics.uci.edu' or dom.endswith('.ics.uci.edu')
             or dom == 'cs.uci.edu' or dom.endswith('.cs.uci.edu')
             or dom == 'informatics.uci.edu' or dom.endswith('.informatics.uci.edu')
             or dom == 'stat.uci.edu' or dom.endswith('.stat.uci.edu')
         ): return False
+        # Banned subdomain
+        if dom in BAD_SUBDOMAINS or any([dom.endswith("." + b) for b in BAD_SUBDOMAINS]):
+            return False
+        # url too long
+        if len(parsed.path) > 200:
+            return False
+        # Path too deep
+        depth = len([segment for segment in parsed.path.split('/') if segment])
+        if depth > 6:
+            return False
 
-        #update these with more traps
-        bad = ['ical=1', '/events/week', '/events/today', '/events/month', 'tribe__ecp_custom','login',
+        # Traps
+        bad = ['/events/week', '/events/today', '/events/month', 'tribe__ecp_custom',
+            '/login', '/doku.php', # Log ins
             '/pix/', '/families/', '/junkyard/', '/pubs/', '/twist/', # Block large datasets
             'do=diff', 'do=media', 'do=edit', 'do=export', # Block Wiki actions
             'share=', 'format=xml', 'action=download',      # Block file exports
-            'ical=1', 'calendar', 'events'                  # Block infinite calendars
+            'ical=1', '/calendar', '/events/'                  # Block infinite calendars
         ]
 
         # matches dates in the format YYYY-MM-DD or YYYY/MM/DD
@@ -225,9 +257,11 @@ def is_valid(url):
         if date_pattern.search(parsed.path):
             return False
 
+        # Checks for traps
         if any (p in (parsed.path.lower() + '?' +  parsed.query.lower()) for p in bad):
             return False
 
+        # Invalid File types
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico|img|json"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -236,7 +270,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv|lif"
-            + r"|c|cpp|py|ipynb|h|java|apk"
+            + r"|c|cpp|py|ipynb|h|java|apk|cc|m|json"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except TypeError:
@@ -255,7 +289,7 @@ def tokenize(text):
     
     tokens = re.findall(r"[a-z0-9]+", text.lower())
     total = len(tokens)
-    counts = Counter(token for token in tokens if token not in stop_words)
+    counts = Counter(token for token in tokens if token not in STOP_WORDS)
 
     return counts, total
 
@@ -345,7 +379,7 @@ def is_similar(word_count: Counter):
     hash_cache.append(sim)
     return False
 
-def is_exact(size):
+def __is_exact(size): # unused
     '''
     Determines if a page is exact.
     '''
@@ -377,7 +411,7 @@ def valid_cache_status(status):
         case 605: # bad file extension, skip
             return False
         case 606: # Bad parsing
-            return Exception("Status 606: Exception in parsin")
+            raise Exception("Status 606: Exception in parsin")
         case 607: # Content too big, allow in for handling
             return True
         case 608: # Denied by domain robot rules, skip
